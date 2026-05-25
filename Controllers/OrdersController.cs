@@ -1,12 +1,16 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Retail_Ordering_Web.Data;
+using Retail_Ordering_Web.DTOs;
 using Retail_Ordering_Web.Models;
+using System.Security.Claims;
 
 namespace Retail_Ordering_Web.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class OrdersController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -17,9 +21,9 @@ namespace Retail_Ordering_Web.Controllers
         }
 
         [HttpPost("place")]
-        public async Task<IActionResult> PlaceOrder(string customerName)
+        public async Task<IActionResult> PlaceOrder(OrderRequestDto dto)
         {
-            int userId = 1;
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
             var cart = await _context.Carts
                 .Include(c => c.CartItems)
@@ -29,23 +33,15 @@ namespace Retail_Ordering_Web.Controllers
             if (cart == null || !cart.CartItems.Any())
                 return BadRequest("Cart is empty");
 
-            foreach (var item in cart.CartItems)
-            {
-                if (item.Product.Quantity < item.Quantity)
-                {
-                    return BadRequest($"Not enough stock for {item.Product.Name}");
-                }
-            }
-
             decimal totalAmount = cart.CartItems.Sum(
                 item => item.Product.Price * item.Quantity
             );
 
             var order = new Order
             {
-                CustomerName = customerName,
+                CustomerName = dto.CustomerName,
                 TotalAmount = totalAmount,
-                OrderDate = DateTime.Now
+                Status = "Pending"
             };
 
             _context.Orders.Add(order);
@@ -53,31 +49,18 @@ namespace Retail_Ordering_Web.Controllers
 
             foreach (var item in cart.CartItems)
             {
-                var orderItem = new OrderItem
+                _context.OrderItems.Add(new OrderItem
                 {
                     OrderId = order.Id,
                     ProductId = item.ProductId,
                     Quantity = item.Quantity,
                     Price = item.Product.Price
-                };
-
-                _context.OrderItems.Add(orderItem);
-
-                item.Product.Quantity -= item.Quantity;
+                });
             }
-
-            _context.CartItems.RemoveRange(cart.CartItems);
 
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                Message = "Order placed successfully",
-                OrderId = order.Id,
-                Customer = customerName,
-                TotalAmount = totalAmount,
-                OrderDate = order.OrderDate
-            });
+            return Ok("Order placed and waiting for admin approval");
         }
 
         [HttpGet]
@@ -88,21 +71,7 @@ namespace Retail_Ordering_Web.Controllers
                 .ThenInclude(oi => oi.Product)
                 .ToListAsync();
 
-            var result = orders.Select(order => new
-            {
-                order.Id,
-                order.CustomerName,
-                order.TotalAmount,
-                order.OrderDate,
-                Items = order.OrderItems.Select(item => new
-                {
-                    ProductName = item.Product.Name,
-                    item.Quantity,
-                    item.Price
-                })
-            });
-
-            return Ok(result);
+            return Ok(orders);
         }
     }
 }

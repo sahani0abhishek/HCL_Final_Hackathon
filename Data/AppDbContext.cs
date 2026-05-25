@@ -15,5 +15,6 @@ namespace Retail_Ordering_Web.Data
         public DbSet<CartItem> CartItems => Set<CartItem>();
         public DbSet<Order> Orders => Set<Order>();
         public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+        public DbSet<User> Users => Set<User>();
     }
 }

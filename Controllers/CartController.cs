@@ -1,12 +1,16 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Retail_Ordering_Web.Data;
+using Retail_Ordering_Web.DTOs;
 using Retail_Ordering_Web.Models;
+using System.Security.Claims;
 
 namespace Retail_Ordering_Web.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class CartController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -17,16 +21,16 @@ namespace Retail_Ordering_Web.Controllers
         }
 
         [HttpPost("add")]
-        public async Task<IActionResult> AddToCart(int productId, int quantity)
+        public async Task<IActionResult> AddToCart(AddToCartDto dto)
         {
-            int userId = 1;
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-            var product = await _context.Products.FindAsync(productId);
+            var product = await _context.Products.FindAsync(dto.ProductId);
 
             if (product == null)
                 return NotFound("Product not found");
 
-            if (product.Quantity < quantity)
+            if (product.Quantity < dto.Quantity)
                 return BadRequest("Not enough stock");
 
             var cart = await _context.Carts
@@ -35,28 +39,24 @@ namespace Retail_Ordering_Web.Controllers
 
             if (cart == null)
             {
-                cart = new Cart
-                {
-                    UserId = userId
-                };
-
+                cart = new Cart { UserId = userId };
                 _context.Carts.Add(cart);
                 await _context.SaveChangesAsync();
             }
 
             var existingItem = cart.CartItems
-                .FirstOrDefault(x => x.ProductId == productId);
+                .FirstOrDefault(x => x.ProductId == dto.ProductId);
 
             if (existingItem != null)
             {
-                existingItem.Quantity += quantity;
+                existingItem.Quantity += dto.Quantity;
             }
             else
             {
                 cart.CartItems.Add(new CartItem
                 {
-                    ProductId = productId,
-                    Quantity = quantity
+                    ProductId = dto.ProductId,
+                    Quantity = dto.Quantity
                 });
             }
 
@@ -68,7 +68,7 @@ namespace Retail_Ordering_Web.Controllers
         [HttpGet]
         public async Task<IActionResult> GetCart()
         {
-            int userId = 1;
+            int userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
             var cart = await _context.Carts
                 .Include(c => c.CartItems)
@@ -78,57 +78,17 @@ namespace Retail_Ordering_Web.Controllers
             if (cart == null)
                 return NotFound("Cart empty");
 
-            var result = new
+            return Ok(new
             {
                 cart.Id,
-                cart.UserId,
                 Items = cart.CartItems.Select(item => new
                 {
                     item.Id,
                     ProductName = item.Product.Name,
                     item.Product.Price,
-                    item.Quantity,
-                    Total = item.Product.Price * item.Quantity
-                }),
-                GrandTotal = cart.CartItems.Sum(item => item.Product.Price * item.Quantity)
-            };
-
-            return Ok(result);
-        }
-
-        [HttpPut("update")]
-        public async Task<IActionResult> UpdateCart(int cartItemId, int quantity)
-        {
-            var item = await _context.CartItems
-                .Include(ci => ci.Product)
-                .FirstOrDefaultAsync(ci => ci.Id == cartItemId);
-
-            if (item == null)
-                return NotFound("Item not found");
-
-            if (item.Product.Quantity < quantity)
-                return BadRequest("Not enough stock");
-
-            item.Quantity = quantity;
-
-            await _context.SaveChangesAsync();
-
-            return Ok("Cart updated");
-        }
-
-        [HttpDelete("remove/{id}")]
-        public async Task<IActionResult> RemoveFromCart(int id)
-        {
-            var item = await _context.CartItems.FindAsync(id);
-
-            if (item == null)
-                return NotFound("Item not found");
-
-            _context.CartItems.Remove(item);
-
-            await _context.SaveChangesAsync();
-
-            return Ok("Item removed");
+                    item.Quantity
+                })
+            });
         }
     }
 }

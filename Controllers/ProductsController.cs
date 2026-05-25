@@ -36,11 +36,13 @@ namespace Retail_Ordering_Web.Controllers
             return await query.ToListAsync();
         }
 
-        [HttpPost]
-        public async Task<ActionResult<Product>> AddProduct(Product product)
+        [HttpGet("{id}")]
+        public async Task<ActionResult<Product>> GetProductById(int id)
         {
-            _context.Products.Add(product);
-            await _context.SaveChangesAsync();
+            var product = await _context.Products.FindAsync(id);
+
+            if (product == null)
+                return NotFound("Product not found");
 
             return Ok(product);
         }
